@@ -16,7 +16,7 @@ func runConfigTests() {
         [[position]]
         code = "reading"
         cell = [0, 0, 8, 8]
-        key = "cmd+ctrl+left"
+        key = "cmd+alt+left"
         """)
         // The grid is fixed: columns/rows in config are ignored, not honored.
         R.equal(config.settings.columns, 24, "columns locked at 24")
@@ -206,8 +206,108 @@ func runConfigTests() {
 
     R.throwsError("malformed TOML throws") { _ = try ConfigLoader.parse("this is = = not toml [") }
 
+    R.noThrow("parse errors are described with a line number") {
+        do {
+            _ = try ConfigLoader.parse("[settings]\ngap = 0\nthis is = = not toml [")
+            R.ok(false, "expected a parse error")
+        } catch {
+            let message = Config.describe(error)
+            R.ok(message.hasPrefix("Line 3:"), "points at line 3 — got \(message)")
+        }
+    }
+
+    R.noThrow("invalid entries are reported as warnings") {
+        let config = try ConfigLoader.parse("""
+        [[position]]
+        code = "bad-action"
+        action = "teleport"
+        [[position]]
+        code = "bad-cell"
+        cell = [0, 0, 1]
+        [[position]]
+        code = "no-kind"
+        [[position]]
+        code = "bad-key"
+        cell = [0, 0, 1, 1]
+        key = "cmd+nope"
+        """)
+        let w = config.warnings
+        R.equal(w.count, 4, "one warning per bad entry — got \(w)")
+        R.ok(w.contains { $0.contains("bad-action") && $0.contains("teleport") }, "unknown action")
+        R.ok(w.contains { $0.contains("bad-cell") && $0.contains("invalid cell") }, "malformed cell")
+        R.ok(w.contains { $0.contains("no-kind") && $0.contains("needs a cell or an action") }, "missing cell/action")
+        R.ok(w.contains { $0.contains("bad-key") && $0.contains("cmd+nope") }, "unparseable key")
+        R.equal(config.positions.filter { !$0.isBuiltin }.map(\.code), ["bad-key"], "bad key still kept, unbound")
+    }
+
+    R.noThrow("out-of-grid cells are kept but warned about") {
+        let config = try ConfigLoader.parse("""
+        [[position]]
+        code = "too-wide"
+        cell = [20, 0, 8, 12]
+        """)
+        R.equal(config.positions.filter { !$0.isBuiltin }.count, 1, "kept (geometry clamps it)")
+        R.ok(config.warnings.contains { $0.contains("too-wide") && $0.contains("24×12") }, "warned")
+    }
+
+    R.noThrow("typos and unknown keys are flagged") {
+        let config = try ConfigLoader.parse("""
+        [settings]
+        gapp = 4
+        gap = "wide"
+
+        [keybindings]
+        left-halff = "cmd+ctrl+h"
+        right-half = "cmd+ctrl+nope"
+
+        [[position]]
+        code = "x"
+        ceel = [0, 0, 1, 1]
+        cell = [0, 0, 1, 1]
+
+        [[postion]]
+        code = "y"
+        """)
+        let w = config.warnings
+        R.ok(w.contains { $0.contains("gapp") }, "unknown setting")
+        R.ok(w.contains { $0.contains("gap must be a number") }, "wrong type for gap")
+        R.ok(w.contains { $0.contains("left-halff") }, "unknown built-in in [keybindings]")
+        R.ok(w.contains { $0.contains("right-half") && $0.contains("cmd+ctrl+nope") }, "bad built-in shortcut")
+        R.ok(w.contains { $0.contains("ceel") }, "unknown position key")
+        R.ok(w.contains { $0.contains("postion") }, "unknown table")
+        R.equal(config.settings.gap, 0, "bad gap falls back to default")
+    }
+
+    R.noThrow("clashing shortcuts are flagged and only the first keeps it") {
+        let config = try ConfigLoader.parse("""
+        [[position]]
+        code = "mine"
+        cell = [0, 0, 6, 12]
+        key = "cmd+ctrl+left"
+        """)
+        let lh = config.positions.first { $0.code == "left-half" }
+        let mine = config.positions.first { $0.code == "mine" }
+        R.equal(lh?.key?.keyCode, UInt32(kVK_LeftArrow), "built-in keeps the shortcut")
+        R.ok(mine?.key == nil, "later duplicate is unbound")
+        R.ok(config.warnings.contains { $0.contains("Left Half") && $0.contains("Mine") }, "clash warned")
+    }
+
+    R.noThrow("duplicate custom codes are flagged") {
+        let config = try ConfigLoader.parse("""
+        [[position]]
+        code = "dup"
+        cell = [0, 0, 1, 1]
+        [[position]]
+        code = "dup"
+        cell = [1, 1, 1, 1]
+        """)
+        R.equal(config.positions.filter { $0.code == "dup" }.count, 1, "only the first kept")
+        R.ok(config.warnings.contains { $0.contains("dup") && $0.contains("more than once") }, "warned")
+    }
+
     R.noThrow("shipped default config parses") {
         let config = try ConfigLoader.parse(DefaultConfig.toml)
+        R.equal(config.warnings, [], "no warnings")
         R.ok(config.positions.count >= 17, "has at least 17 positions (got \(config.positions.count))")
 
         let leftHalf = config.positions.first { $0.code == "left-half" }

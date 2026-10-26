@@ -13,6 +13,8 @@ final class HotkeyManager {
     private var started = false
     private var handlerInstalled = false
     private var lastEventTime: UInt64 = 0
+    /// Shortcuts that couldn't be registered last time (shown in the menu).
+    private(set) var failures: [String] = []
 
     func start() {
         guard !started else { return }
@@ -51,6 +53,7 @@ final class HotkeyManager {
             if status == noErr, let ref = ref {
                 hotkeyRefs.append(ref)
             } else {
+                failures.append("\(KeyParser.display(key)) for \(position.name) didn't work, macOS or another app is already using it")
                 FileLog.write("FAILED to register \(position.code) (\(key.raw)) status=\(status) — key may be taken by the system or another app")
             }
         }
@@ -63,6 +66,7 @@ final class HotkeyManager {
         }
         hotkeyRefs.removeAll()
         actionMap.removeAll()
+        failures.removeAll()
         nextID = 1
     }
 
