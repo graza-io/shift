@@ -335,6 +335,14 @@ enum ConfigLoader {
         case "restore":                       return .restore
         case "nextdisplay":                   return .nextDisplay
         case "previousdisplay", "prevdisplay": return .previousDisplay
+        case "moveleft":                      return .adjust(CellDelta(dx: -1))
+        case "moveright":                     return .adjust(CellDelta(dx: 1))
+        case "moveup":                        return .adjust(CellDelta(dy: -1))
+        case "movedown":                      return .adjust(CellDelta(dy: 1))
+        case "growwidth":                     return .adjust(CellDelta(dw: 1))
+        case "shrinkwidth":                   return .adjust(CellDelta(dw: -1))
+        case "growheight":                    return .adjust(CellDelta(dh: 1))
+        case "shrinkheight":                  return .adjust(CellDelta(dh: -1))
         default:                              return nil
         }
     }

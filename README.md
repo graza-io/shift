@@ -39,11 +39,15 @@ There are two kinds of positions:
 - **Built-in** - the **Basic Layout** group (halves/quarters/thirds/two-thirds,
   vertical top/middle/bottom thirds for stacking on portrait displays, +
   maximize/center, and restore, which steps back through each window's last 10
-  positions one press at a time) and **Displays** (next/previous, which keep the window in the same grid spot on the new screen). These are baked into
+  positions one press at a time), **Move & Resize** (move or grow/shrink the window
+  by one grid cell, snapping off-grid windows to the nearest cell first) and
+  **Displays** (next/previous, which keep the window in the same grid spot on the
+  new screen). These are baked into
   the app: you can't add, remove, or move them, but you *can* rebind their
   shortcuts in the `[keybindings]` table (keyed by `code`; `""` unbinds, and a
-  deleted line keeps the default). The vertical thirds are **unbound by default** -
-  give them a shortcut in `[keybindings]` to enable, or trigger them from the menu.
+  deleted line keeps the default). The vertical thirds and Move & Resize are
+  **unbound by default** - give them a shortcut in `[keybindings]` to enable, or
+  trigger them from the menu.
 - **Custom** - fully yours. Add / edit / remove `[[position]]` blocks.
 
 The grid is a fixed **24×12** - those numbers divide cleanly into halves, thirds,
@@ -61,7 +65,7 @@ menu_icon = "rectangle.3.group"  # SF Symbol name, image path, or literal text/e
 left-half    = "cmd+ctrl+left"
 maximize     = "cmd+ctrl+return"
 next-display = "cmd+ctrl+alt+right"
-# … 18 built-ins total
+# … 31 built-ins total
 
 # Custom positions:
 [[position]]
@@ -95,10 +99,11 @@ name      = "Left"            # optional, defaults to "Left Half → Left Two-Th
 - The default config ships cycles on ⌘⌃ + arrows for halves → two-thirds → thirds.
 
 Custom positions can also use `action =` instead of `cell`: `maximize`, `center`,
-`restore`, `next-display` / `previous-display`.
+`restore`, `next-display` / `previous-display`, `move-left` / `move-right` /
+`move-up` / `move-down`, `grow-width` / `shrink-width` / `grow-height` / `shrink-height`.
 
-The menu groups positions into submenus by `category`: **Basic Layout**, then your
-custom categories, then **Displays**.
+The menu groups positions into submenus by `category`: **Basic Layout**, **Move &
+Resize**, then your custom categories, **Cycles**, then **Displays**.
 
 Default modifier scheme: positions on **⌘⌃**, monitor throws on **⌘⌃⌥←/→**.
 

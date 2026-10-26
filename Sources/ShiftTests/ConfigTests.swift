@@ -66,6 +66,35 @@ func runConfigTests() {
         R.equal(middle?.key?.keyCode, UInt32(kVK_ANSI_M), "middle-third bound via keybindings")
     }
 
+    R.noThrow("move & resize built-ins: keyless by default, bindable, own category") {
+        let config = try ConfigLoader.parse("""
+        [keybindings]
+        move-left = "cmd+ctrl+shift+left"
+        """)
+        let codes = ["move-left", "move-right", "move-up", "move-down",
+                     "grow-width", "shrink-width", "grow-height", "shrink-height"]
+        let adjusters = config.positions.filter { codes.contains($0.code) }
+        R.equal(adjusters.count, 8, "all eight present")
+        R.ok(adjusters.allSatisfy { $0.isBuiltin && $0.category == "Move & Resize" }, "built-in, own category")
+        R.ok(adjusters.filter { $0.code != "move-left" }.allSatisfy { $0.key == nil }, "unbound by default")
+        R.equal(adjusters.first { $0.code == "move-left" }?.key?.keyCode, UInt32(kVK_LeftArrow), "bindable")
+        R.ok(adjusters.first { $0.code == "grow-width" }?.kind == .adjust(CellDelta(dw: 1)), "grow-width delta")
+    }
+
+    R.noThrow("move & resize work as custom actions") {
+        let config = try ConfigLoader.parse("""
+        [[position]]
+        code = "nudge"
+        action = "move_right"
+        [[position]]
+        code = "taller"
+        action = "GrowHeight"
+        """)
+        R.ok(config.positions.first { $0.code == "nudge" }?.kind == .adjust(CellDelta(dx: 1)), "move_right")
+        R.ok(config.positions.first { $0.code == "taller" }?.kind == .adjust(CellDelta(dh: 1)), "GrowHeight")
+        R.equal(config.warnings, [], "no warnings")
+    }
+
     R.noThrow("keybindings override and unbind built-ins") {
         let config = try ConfigLoader.parse("""
         [keybindings]
