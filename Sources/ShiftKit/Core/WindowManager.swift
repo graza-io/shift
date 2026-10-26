@@ -3,15 +3,25 @@ import ApplicationServices
 
 private let kAXEnhancedUserInterface = "AXEnhancedUserInterface" as CFString
 
+// Private but long-stable (Rectangle, Amethyst and yabai all rely on it): the
+// CGWindowID behind an AX window. Looked up at runtime so a missing symbol just
+// means falling back to matching windows by position.
+private typealias AXUIElementGetWindowFunc = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
+private let _AXUIElementGetWindow: AXUIElementGetWindowFunc? = {
+    guard let s = dlsym(UnsafeMutableRawPointer(bitPattern: -2) /* RTLD_DEFAULT */, "_AXUIElementGetWindow") else { return nil }
+    return unsafeBitCast(s, to: AXUIElementGetWindowFunc.self)
+}()
+
 /// Moves/resizes the focused window. Window detection and the SkyLight fallback
 /// are adapted from Nudge (which handles AX-less apps like Electron/Catalyst).
 final class WindowManager {
     static let shared = WindowManager()
     private init() {}
 
-    private var previousFrames: [String: CGRect] = [:]
+    /// Where each window was before Shift moved it, newest last (for Restore).
+    private var history = WindowHistory()
     /// Per window: the cycle step Shift last applied and the frame it ended up with.
-    private var cycleMemory: [String: (cycle: String, index: Int, frame: CGRect)] = [:]
+    private var cycleMemory: [CGWindowID: (cycle: String, index: Int, frame: CGRect)] = [:]
 
     // MARK: - Entry point
 
@@ -35,12 +45,12 @@ final class WindowManager {
         let targets = cycle.steps.map { step in
             targetFrame(for: step.kind, on: screen).map { convertToCG(nsFrame: $0, screen: screen) }
         }
-        let memory = getWindowID(of: window).flatMap { cycleMemory[$0] }
+        let memory = windowID(of: window).flatMap { cycleMemory[$0] }
         let remembered = memory.flatMap { $0.cycle == cycle.code ? (index: $0.index, frame: $0.frame) : nil }
         let index = CycleStepper.nextIndex(current: frame, targets: targets, remembered: remembered)
 
         applyToAXWindow(window, position: cycle.steps[index])
-        if let id = getWindowID(of: window), let newFrame = getFrame(of: window) {
+        if let id = windowID(of: window), let newFrame = getFrame(of: window) {
             cycleMemory[id] = (cycle.code, index, newFrame)
         }
     }
@@ -97,19 +107,25 @@ final class WindowManager {
         }
         let screen = DisplayHelper.shared.currentScreen(for: result.bounds)
 
-        switch position.kind {
-        case .cell, .maximize:
-            guard let nsFrame = targetFrame(for: position.kind, on: screen) else { return }
-            let cgFrame = convertToCG(nsFrame: nsFrame, screen: screen)
-            previousFrames["\(pid)-\(result.wid)"] = result.bounds
-            _ = SkyLight.moveWindow(windowID: result.wid, to: cgFrame.origin)
-            // Resize via AX on the PID-based focused window (move came from SkyLight).
+        // The move comes from SkyLight; the resize via AX on the PID's focused window.
+        func setFrame(_ frame: CGRect) {
+            _ = SkyLight.moveWindow(windowID: result.wid, to: frame.origin)
             let axApp = AXUIElementCreateApplication(pid)
             var fw: AnyObject?
             if AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &fw) == .success,
                let axWin = fw as! AXUIElement? {
-                setSize(of: axWin, to: cgFrame.size)
+                setSize(of: axWin, to: frame.size)
             }
+        }
+
+        switch position.kind {
+        case .cell, .maximize:
+            guard let nsFrame = targetFrame(for: position.kind, on: screen) else { return }
+            let cgFrame = convertToCG(nsFrame: nsFrame, screen: screen)
+            remember(result.bounds, for: result.wid, unless: cgFrame)
+            setFrame(cgFrame)
+        case .restore:
+            if let frame = history.pop(for: result.wid) { setFrame(frame) }
         default:
             FileLog.write("apply: '\(position.code)' not supported via SkyLight fallback")
         }
@@ -122,8 +138,9 @@ final class WindowManager {
         let screenCG = convertToCG(nsFrame: screen.visibleFrame, screen: screen)
         let cgX = screenCG.minX + (screenCG.width - size.width) / 2
         let cgY = screenCG.minY + (screenCG.height - size.height) / 2
-        if let id = getWindowID(of: window) { previousFrames[id] = currentFrame }
-        setPosition(of: window, to: CGPoint(x: cgX, y: cgY))
+        let target = CGRect(x: cgX, y: cgY, width: size.width, height: size.height)
+        if let id = windowID(of: window) { remember(currentFrame, for: id, unless: target) }
+        setPosition(of: window, to: target.origin)
     }
 
     private func moveToDisplay(window: AXUIElement, from currentScreen: NSScreen, next: Bool) {
@@ -139,11 +156,23 @@ final class WindowManager {
 
     // MARK: - Restore
 
+    /// Steps the window back one move. Does nothing when there's nothing to undo.
     func restoreWindow(_ window: AXUIElement) {
-        guard let id = getWindowID(of: window), let frame = previousFrames[id] else { return }
-        setPosition(of: window, to: frame.origin)
-        setSize(of: window, to: frame.size)
-        previousFrames.removeValue(forKey: id)
+        guard let id = windowID(of: window), let frame = history.pop(for: id) else { return }
+        setFrame(of: window, to: frame)
+    }
+
+    /// Records `frame` in the window's history, unless the move won't actually
+    /// change anything (so pressing the same shortcut twice doesn't need two
+    /// Restores to undo). Also forgets windows that have since closed.
+    private func remember(_ frame: CGRect, for id: CGWindowID, unless target: CGRect) {
+        guard !frame.isClose(to: target, tolerance: 2) else { return }
+        history.push(frame, for: id)
+
+        let all = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+        let live = Set(all.compactMap { ($0[kCGWindowNumber as String] as? Int).map(CGWindowID.init) })
+        history.prune(keeping: live)
+        cycleMemory = cycleMemory.filter { live.contains($0.key) }
     }
 
     // MARK: - Focused window detection (adapted from Nudge)
@@ -260,9 +289,13 @@ final class WindowManager {
     }
 
     func move(window: AXUIElement, to frame: CGRect) {
-        if let currentFrame = getFrame(of: window), let id = getWindowID(of: window) {
-            previousFrames[id] = currentFrame
+        if let currentFrame = getFrame(of: window), let id = windowID(of: window) {
+            remember(currentFrame, for: id, unless: frame)
         }
+        setFrame(of: window, to: frame)
+    }
+
+    private func setFrame(of window: AXUIElement, to frame: CGRect) {
         disableEnhancedUI(for: window)
         setPosition(of: window, to: frame.origin)
         setSize(of: window, to: frame.size)
@@ -283,20 +316,27 @@ final class WindowManager {
 
     // MARK: - Window ID + coordinates
 
-    private func getWindowID(of window: AXUIElement) -> String? {
+    /// The window's CGWindowID: stable while it moves and unique per window.
+    /// nil if it can't be pinned down (then nothing is recorded for it, rather
+    /// than risking mixing it up with another window).
+    private func windowID(of window: AXUIElement) -> CGWindowID? {
+        var id: CGWindowID = 0
+        if let fn = _AXUIElementGetWindow, fn(window, &id) == .success, id != 0 { return id }
+
+        // Fallback: match by owner and position among on-screen windows.
         var pid: pid_t = 0
         AXUIElementGetPid(window, &pid)
-        guard let position = getPosition(of: window) else { return "\(pid)-unknown" }
+        guard let position = getPosition(of: window) else { return nil }
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         for info in list {
             guard let wPid = info[kCGWindowOwnerPID as String] as? pid_t, wPid == pid,
                   let wNumber = info[kCGWindowNumber as String] as? Int,
                   let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
             if abs((bounds["X"] ?? 0) - position.x) < 5 && abs((bounds["Y"] ?? 0) - position.y) < 5 {
-                return "\(pid)-\(wNumber)"
+                return CGWindowID(wNumber)
             }
         }
-        return "\(pid)-unknown"
+        return nil
     }
 
     /// Convert an AppKit (bottom-left origin) frame to CoreGraphics/AX (top-left origin).
