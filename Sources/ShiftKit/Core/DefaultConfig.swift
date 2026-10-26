@@ -68,6 +68,16 @@ enum DefaultConfig {
     maximize         = "cmd+ctrl+return"
     center           = "cmd+ctrl+c"
     restore          = "cmd+ctrl+delete"
+    # Move & Resize: nudge the window one grid cell at a time (off-grid windows
+    # snap to the nearest cell first). Unbound by default; uncomment to enable.
+    # move-left         = ""
+    # move-right        = ""
+    # move-up           = ""
+    # move-down         = ""
+    # grow-width        = ""
+    # shrink-width      = ""
+    # grow-height       = ""
+    # shrink-height     = ""
     # Displays
     next-display     = "cmd+ctrl+alt+right"
     prev-display     = "cmd+ctrl+alt+left"

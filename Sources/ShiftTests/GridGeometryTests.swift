@@ -55,6 +55,46 @@ func runGridGeometryTests() {
 
     runFrameToCellTests()
     runDisplayThrowTests()
+    runAdjustTests()
+}
+
+private func runAdjustTests() {
+    R.suite("GridGeometry: move & resize by a cell")
+
+    func adj(_ c: CellRect, _ d: CellDelta) -> CellRect { GridGeometry.adjusted(c, by: d, columns: 24, rows: 12) }
+    let mid = CellRect(x: 6, y: 3, w: 8, h: 4)
+
+    R.equal(adj(mid, CellDelta(dx: -1)), CellRect(x: 5, y: 3, w: 8, h: 4), "move left")
+    R.equal(adj(mid, CellDelta(dx: 1)), CellRect(x: 7, y: 3, w: 8, h: 4), "move right")
+    R.equal(adj(mid, CellDelta(dy: -1)), CellRect(x: 6, y: 2, w: 8, h: 4), "move up")
+    R.equal(adj(mid, CellDelta(dy: 1)), CellRect(x: 6, y: 4, w: 8, h: 4), "move down")
+    R.equal(adj(mid, CellDelta(dw: 1)), CellRect(x: 6, y: 3, w: 9, h: 4), "grow width pushes the right edge")
+    R.equal(adj(mid, CellDelta(dw: -1)), CellRect(x: 6, y: 3, w: 7, h: 4), "shrink width")
+    R.equal(adj(mid, CellDelta(dh: 1)), CellRect(x: 6, y: 3, w: 8, h: 5), "grow height pushes the bottom edge")
+    R.equal(adj(mid, CellDelta(dh: -1)), CellRect(x: 6, y: 3, w: 8, h: 3), "shrink height")
+
+    // Edges.
+    let leftHalf = CellRect(x: 0, y: 0, w: 12, h: 12)
+    R.equal(adj(leftHalf, CellDelta(dx: -1)), leftHalf, "can't move past the left edge")
+    R.equal(adj(leftHalf, CellDelta(dy: 1)), leftHalf, "full height can't move down")
+    let rightHalf = CellRect(x: 12, y: 0, w: 12, h: 12)
+    R.equal(adj(rightHalf, CellDelta(dx: 1)), rightHalf, "can't move past the right edge")
+    R.equal(adj(rightHalf, CellDelta(dw: 1)), CellRect(x: 11, y: 0, w: 13, h: 12),
+            "at the right edge, grow width grows leftwards")
+    R.equal(adj(CellRect(x: 0, y: 8, w: 24, h: 4), CellDelta(dh: 1)), CellRect(x: 0, y: 7, w: 24, h: 5),
+            "at the bottom edge, grow height grows upwards")
+    let full = CellRect(x: 0, y: 0, w: 24, h: 12)
+    R.equal(adj(full, CellDelta(dw: 1, dh: 1)), full, "full screen can't grow")
+
+    // Minimum size.
+    let tiny = CellRect(x: 3, y: 3, w: 1, h: 1)
+    R.equal(adj(tiny, CellDelta(dw: -1, dh: -1)), tiny, "never smaller than one cell")
+
+    // Off-grid window: snap to the nearest cell first, then nudge.
+    let vf = CGRect(x: 0, y: 0, width: 2400, height: 1200)
+    let snapped = GridGeometry.nearestCell(to: CGRect(x: 130, y: 640, width: 940, height: 470), in: vf,
+                                           columns: 24, rows: 12)
+    R.equal(adj(snapped, CellDelta(dx: 1)), CellRect(x: 2, y: 1, w: 10, h: 5), "off-grid snaps then moves")
 }
 
 private func runFrameToCellTests() {

@@ -2,9 +2,10 @@ import Foundation
 
 /// Positions baked into the app. Their geometry, name, and category are fixed —
 /// the config can only rebind their shortcut (via the `[keybindings]` table).
-/// Specs are listed in menu order: the "Basic Layout" group, then "Displays".
+/// Specs are listed in menu order: "Basic Layout", "Move & Resize", then "Displays".
 enum BuiltinPositions {
     static let basicCategory = "Basic Layout"
+    static let adjustCategory = "Move & Resize"
     static let displaysCategory = "Displays"
 
     struct Spec {
@@ -17,6 +18,10 @@ enum BuiltinPositions {
 
     private static func half(_ code: String, _ name: String, _ rect: CellRect, _ key: String?) -> Spec {
         Spec(code: code, name: name, category: basicCategory, kind: .cell(rect), defaultKey: key)
+    }
+
+    private static func adjust(_ code: String, _ name: String, _ delta: CellDelta) -> Spec {
+        Spec(code: code, name: name, category: adjustCategory, kind: .adjust(delta), defaultKey: nil)
     }
 
     static let specs: [Spec] = [
@@ -48,6 +53,15 @@ enum BuiltinPositions {
         Spec(code: "maximize", name: "Maximize", category: basicCategory, kind: .maximize, defaultKey: "cmd+ctrl+return"),
         Spec(code: "center",   name: "Center",   category: basicCategory, kind: .center,   defaultKey: "cmd+ctrl+c"),
         Spec(code: "restore",  name: "Restore",  category: basicCategory, kind: .restore,  defaultKey: "cmd+ctrl+delete"),
+        // ── Move & Resize: one grid cell at a time. Keyless by default. ──
+        adjust("move-left",     "Move Left",     CellDelta(dx: -1)),
+        adjust("move-right",    "Move Right",    CellDelta(dx: 1)),
+        adjust("move-up",       "Move Up",       CellDelta(dy: -1)),
+        adjust("move-down",     "Move Down",     CellDelta(dy: 1)),
+        adjust("grow-width",    "Grow Width",    CellDelta(dw: 1)),
+        adjust("shrink-width",  "Shrink Width",  CellDelta(dw: -1)),
+        adjust("grow-height",   "Grow Height",   CellDelta(dh: 1)),
+        adjust("shrink-height", "Shrink Height", CellDelta(dh: -1)),
         // ── Displays ──
         Spec(code: "next-display", name: "Next Display",     category: displaysCategory, kind: .nextDisplay,     defaultKey: "cmd+ctrl+alt+right"),
         Spec(code: "prev-display", name: "Previous Display", category: displaysCategory, kind: .previousDisplay, defaultKey: "cmd+ctrl+alt+left"),

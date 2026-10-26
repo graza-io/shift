@@ -10,6 +10,11 @@ struct CellRect: Equatable {
     var h: Int   // height in rows           (>= 1)
 }
 
+/// A relative change in grid units: move by (dx, dy), resize by (dw, dh).
+struct CellDelta: Equatable {
+    var dx = 0, dy = 0, dw = 0, dh = 0
+}
+
 /// What a registered position does when triggered.
 enum PositionKind: Equatable {
     case cell(CellRect)        // snap to a grid rectangle
@@ -18,6 +23,7 @@ enum PositionKind: Equatable {
     case restore               // restore the window's pre-move frame
     case nextDisplay           // throw to the next monitor
     case previousDisplay       // throw to the previous monitor
+    case adjust(CellDelta)     // snap to the nearest cell, then move/resize by a cell
 }
 
 /// A parsed keyboard shortcut (Carbon modifier mask + virtual key code).

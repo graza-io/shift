@@ -43,7 +43,7 @@ final class WindowManager {
         }
         let screen = DisplayHelper.shared.currentScreen(for: frame)
         let targets = cycle.steps.map { step in
-            targetFrame(for: step.kind, on: screen).map { convertToCG(nsFrame: $0, screen: screen) }
+            targetFrame(for: step.kind, on: screen, current: frame).map { convertToCG(nsFrame: $0, screen: screen) }
         }
         let memory = windowID(of: window).flatMap { cycleMemory[$0] }
         let remembered = memory.flatMap { $0.cycle == cycle.code ? (index: $0.index, frame: $0.frame) : nil }
@@ -58,7 +58,8 @@ final class WindowManager {
     // MARK: - Target frame (NS coordinates)
 
     /// AppKit-coordinate target frame for frame-producing kinds, else nil.
-    private func targetFrame(for kind: PositionKind, on screen: NSScreen) -> CGRect? {
+    /// `current` is the window's frame (CG coords), which `.adjust` starts from.
+    private func targetFrame(for kind: PositionKind, on screen: NSScreen, current: CGRect) -> CGRect? {
         let settings = Config.shared.current.settings
         switch kind {
         case .cell(let cell):
@@ -66,6 +67,12 @@ final class WindowManager {
         case .maximize:
             let vf = screen.visibleFrame
             return settings.screenGap > 0 ? vf.insetBy(dx: settings.screenGap, dy: settings.screenGap) : vf
+        case .adjust(let delta):
+            let cell = GridGeometry.nearestCell(to: convertToNS(cgFrame: current), in: screen.visibleFrame,
+                                                columns: settings.columns, rows: settings.rows,
+                                                gap: settings.gap, screenGap: settings.screenGap)
+            let target = GridGeometry.adjusted(cell, by: delta, columns: settings.columns, rows: settings.rows)
+            return GridGeometry.frame(for: target, on: screen, settings: settings)
         default:
             return nil
         }
@@ -86,8 +93,8 @@ final class WindowManager {
             moveToDisplay(window: window, from: screen, next: true)
         case .previousDisplay:
             moveToDisplay(window: window, from: screen, next: false)
-        case .cell, .maximize:
-            guard let nsFrame = targetFrame(for: position.kind, on: screen) else { return }
+        case .cell, .maximize, .adjust:
+            guard let nsFrame = targetFrame(for: position.kind, on: screen, current: currentFrame) else { return }
             move(window: window, to: convertToCG(nsFrame: nsFrame, screen: screen))
         }
     }
@@ -119,8 +126,8 @@ final class WindowManager {
         }
 
         switch position.kind {
-        case .cell, .maximize:
-            guard let nsFrame = targetFrame(for: position.kind, on: screen) else { return }
+        case .cell, .maximize, .adjust:
+            guard let nsFrame = targetFrame(for: position.kind, on: screen, current: result.bounds) else { return }
             let cgFrame = convertToCG(nsFrame: nsFrame, screen: screen)
             remember(result.bounds, for: result.wid, unless: cgFrame)
             setFrame(cgFrame)

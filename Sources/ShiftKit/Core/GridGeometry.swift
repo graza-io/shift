@@ -87,6 +87,29 @@ enum GridGeometry {
         return frame.isClose(to: snapped, tolerance: tolerance) ? cell : nil
     }
 
+    /// `cell` moved/resized by `delta`, kept inside the grid. Moves stop at the
+    /// edge; sizes never drop below one cell. Growing pushes the right/bottom
+    /// edge, or the left/top one once there's no room left on that side.
+    static func adjusted(_ cell: CellRect, by delta: CellDelta, columns: Int, rows: Int) -> CellRect {
+        func axis(_ origin: Int, _ size: Int, move: Int, resize: Int, count: Int) -> (Int, Int) {
+            var o = clamp(origin + move, lo: 0, hi: count - size)
+            var s = size
+            if resize > 0 {
+                let grow = min(resize, count - s)
+                let right = min(grow, count - (o + s))
+                o -= grow - right
+                s += grow
+            } else if resize < 0 {
+                s = max(1, s + resize)
+            }
+            o = clamp(o, lo: 0, hi: count - s)
+            return (o, s)
+        }
+        let (x, w) = axis(cell.x, cell.w, move: delta.dx, resize: delta.dw, count: max(1, columns))
+        let (y, h) = axis(cell.y, cell.h, move: delta.dy, resize: delta.dh, count: max(1, rows))
+        return CellRect(x: x, y: y, w: w, h: h)
+    }
+
     // MARK: - Throwing between displays
 
     /// Where a window lands when it's thrown from one display to another (all
