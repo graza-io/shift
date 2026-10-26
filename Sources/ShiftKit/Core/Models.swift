@@ -34,7 +34,7 @@ struct Position {
     let name: String           // friendly display name shown in the menu, e.g. "Left Half"
     let category: String?      // menu grouping, e.g. "Basic Layout"; nil = uncategorized
     let kind: PositionKind
-    let key: Keybinding?
+    var key: Keybinding?
     var isBuiltin: Bool = false // baked into the app; only its key is configurable
 }
 
@@ -54,6 +54,7 @@ struct GridSettings: Equatable {
 struct ShiftConfig {
     var settings: GridSettings
     var positions: [Position]
+    var warnings: [String] = []   // non-fatal problems found while parsing
 }
 
 extension Notification.Name {

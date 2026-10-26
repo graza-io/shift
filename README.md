@@ -30,6 +30,10 @@ On first launch grant **Accessibility** access (System Settings → Privacy & Se
 On first launch Shift seeds `~/.config/shift/config.toml` with sensible defaults
 (halves/quarters/thirds/etc. on ⌘⌃ shortcuts). Edit and save - it reloads automatically.
 
+If something's off (a TOML syntax error, a bad `cell`, an unknown key, a shortcut
+that's already taken), a **⚠** item appears at the top of the menu listing each
+problem. A syntax error keeps the last good config running until you fix it.
+
 There are two kinds of positions:
 
 - **Built-in** - the **Basic Layout** group (halves/quarters/thirds/two-thirds,

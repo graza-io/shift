@@ -63,6 +63,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
+        addProblemsItem()
 
         if AXIsProcessTrusted() {
             // We can move windows → show the shortcuts and config actions.
@@ -100,6 +101,38 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         addAction(title: "Quit Shift", selector: #selector(quit), keyEquivalent: "q", to: menu)
     }
+
+    /// A warning item (only when something's wrong) whose submenu lists each
+    /// problem with the config or its shortcuts, plus a shortcut to fix it.
+    private func addProblemsItem() {
+        let problems = Config.shared.current.warnings + HotkeyManager.shared.failures
+        let loadError = Config.shared.loadError
+        guard loadError != nil || !problems.isEmpty else { return }
+
+        let submenu = NSMenu()
+        if let loadError = loadError {
+            addInfo(loadError, to: submenu)
+            if !problems.isEmpty { submenu.addItem(.separator()) }
+        }
+        problems.forEach { addInfo($0, to: submenu) }
+        submenu.addItem(.separator())
+        addAction(title: "Open Config…", selector: #selector(openConfig), to: submenu)
+
+        let title = loadError != nil
+            ? "⚠ Config error, using last good config"
+            : "⚠ \(problems.count) config \(problems.count == 1 ? "warning" : "warnings")"
+        addSubmenu(title: title, submenu: submenu)
+        menu.addItem(.separator())
+    }
+
+    /// A read-only line of text (enabled so it isn't greyed out, but does nothing).
+    private func addInfo(_ text: String, to menu: NSMenu) {
+        let item = NSMenuItem(title: text, action: #selector(noop), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+    }
+
+    @objc private func noop() {}
 
     /// Renders each `category` as a parent menu item whose submenu holds the
     /// positions. Separators between categories come from `MenuLayout`. An

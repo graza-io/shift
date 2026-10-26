@@ -57,8 +57,8 @@ enum BuiltinPositions {
 
     /// The built-in positions as a list, with `[keybindings]` overrides applied.
     /// An override of "" / "none" / "off" unbinds; an absent/blank one keeps the
-    /// default; an unparseable one logs and leaves it at the default.
-    static func resolved(overrides: [String: String]) -> [Position] {
+    /// default; an unparseable one is reported via `warn` and left at the default.
+    static func resolved(overrides: [String: String], warn: (String) -> Void = { _ in }) -> [Position] {
         specs.map { spec in
             var key = spec.defaultKey.flatMap { KeyParser.keybinding(from: $0) }
             if let override = overrides[spec.code] {
@@ -68,7 +68,7 @@ enum BuiltinPositions {
                 } else if let kb = KeyParser.keybinding(from: override) {
                     key = kb
                 } else {
-                    FileLog.write("config: keybindings.\(spec.code) = '\(override)' is unparseable — keeping default")
+                    warn("[keybindings] \(spec.code) = '\(override)' isn't a valid shortcut, keeping the default")
                 }
             }
             return Position(code: spec.code, name: spec.name, category: spec.category,
