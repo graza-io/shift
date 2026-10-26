@@ -137,8 +137,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// Renders each `category` as a parent menu item whose submenu holds the
     /// positions. Separators between categories come from `MenuLayout`. An
     /// uncategorized config (empty title) is rendered as loose top-level items.
+    /// Cycles get their own submenu, just before Displays.
     private func addPositionGroups(_ positions: [Position]) {
+        var addedCycles = false
         for section in MenuLayout.sections(for: positions) {
+            if section.title == BuiltinPositions.displaysCategory {
+                addCycles()
+                addedCycles = true
+            }
             if section.separatorBefore { menu.addItem(.separator()) }
             if section.title.isEmpty {
                 for index in section.positionIndices { addPositionItem(positions[index], index: index, to: menu) }
@@ -148,6 +154,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 addSubmenu(title: section.title, submenu: submenu)
             }
         }
+        if !addedCycles { addCycles() }
+    }
+
+    private func addCycles() {
+        let cycles = Config.shared.current.cycles
+        guard !cycles.isEmpty else { return }
+        let submenu = NSMenu()
+        for (index, cycle) in cycles.enumerated() {
+            let suffix = cycle.key.map { "   \(KeyParser.display($0))" } ?? ""
+            let item = NSMenuItem(title: cycle.name + suffix, action: #selector(applyCycle(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            submenu.addItem(item)
+        }
+        addSubmenu(title: "Cycles", submenu: submenu)
     }
 
     private func addPositionItem(_ position: Position, index: Int, to menu: NSMenu) {
@@ -176,6 +197,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let positions = Config.shared.current.positions
         guard sender.tag >= 0, sender.tag < positions.count else { return }
         WindowManager.shared.apply(positions[sender.tag])
+    }
+
+    @objc private func applyCycle(_ sender: NSMenuItem) {
+        let cycles = Config.shared.current.cycles
+        guard sender.tag >= 0, sender.tag < cycles.count else { return }
+        WindowManager.shared.apply(cycles[sender.tag])
     }
 
     @objc private func reloadConfig() {

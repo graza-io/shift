@@ -2,6 +2,7 @@
 runGridGeometryTests()
 runKeyParserTests()
 runConfigTests()
+runCycleTests()
 runMenuLayoutTests()
 runAppInfoTests()
 R.finish()

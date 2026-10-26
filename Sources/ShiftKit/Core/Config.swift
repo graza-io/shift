@@ -85,9 +85,10 @@ final class Config {
 /// clashing shortcuts…) is skipped or fixed up and reported in `warnings`, so
 /// one typo never takes the rest of the config down with it.
 enum ConfigLoader {
-    private static let knownTables: Set<String> = ["settings", "keybindings", "position"]
+    private static let knownTables: Set<String> = ["settings", "keybindings", "position", "cycle"]
     private static let knownSettings: Set<String> = ["gap", "screen_gap", "menu_icon", "columns", "rows"]
     private static let knownPositionKeys: Set<String> = ["code", "name", "category", "cell", "action", "key"]
+    private static let knownCycleKeys: Set<String> = ["code", "name", "key", "positions"]
 
     static func parse(_ toml: String) throws -> ShiftConfig {
         let root = try TOMLTable(string: toml)
@@ -98,7 +99,7 @@ enum ConfigLoader {
         }
 
         for key in root.keys where !knownTables.contains(key) {
-            warn("unknown table or setting '\(key)' (expected [settings], [keybindings] or [[position]])")
+            warn("unknown table or setting '\(key)' (expected [settings], [keybindings], [[position]] or [[cycle]])")
         }
 
         var settings = GridSettings()
@@ -181,26 +182,102 @@ enum ConfigLoader {
         // Menu order: Basic Layout, then the user's custom categories, then Displays.
         let leading = builtins.filter { $0.category != BuiltinPositions.displaysCategory }
         let trailing = builtins.filter { $0.category == BuiltinPositions.displaysCategory }
-        let positions = dedupeShortcuts(leading + customs + trailing, warn: warn)
-        return ShiftConfig(settings: settings, positions: positions, warnings: warnings)
+        let cycles = parseCycles(root["cycle"]?.array, positions: leading + customs + trailing, warn: warn)
+        let (positions, boundCycles) = dedupeShortcuts(leading + customs + trailing, cycles: cycles, warn: warn)
+        return ShiftConfig(settings: settings, positions: positions, cycles: boundCycles, warnings: warnings)
     }
 
-    /// Two positions on the same shortcut can't both work, so the first one (in
-    /// menu order) keeps it and the rest are left unbound.
-    private static func dedupeShortcuts(_ positions: [Position], warn: (String) -> Void) -> [Position] {
+    /// `[[cycle]]` blocks: a shortcut plus an ordered list of position codes.
+    private static func parseCycles(_ arr: TOMLArray?, positions: [Position], warn: (String) -> Void) -> [Cycle] {
+        guard let arr = arr else { return [] }
+        var cycles: [Cycle] = []
+        for i in 0..<arr.count {
+            guard let table = arr[i].table else { continue }
+            let rawCode = table["code"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+            let rawName = table["name"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+            let label = rawCode ?? rawName.map { "'\($0)'" } ?? "#\(i + 1)"
+
+            for key in table.keys where !knownCycleKeys.contains(key) {
+                warn("cycle \(label) has an unknown setting '\(key)'")
+            }
+            guard let codes = table["positions"]?.array else {
+                warn("cycle \(label) needs a positions list like [\"left-half\", \"left-third\"], skipped")
+                continue
+            }
+            var steps: [Position] = []
+            for j in 0..<codes.count {
+                guard let code = codes[j].string, let step = positions.first(where: { $0.code == code }) else {
+                    warn("cycle \(label) has an unknown position '\(codes[j].string ?? "?")', skipped it")
+                    continue
+                }
+                switch step.kind {
+                case .cell, .maximize: steps.append(step)
+                default: warn("cycle \(label) can't include '\(code)' (only grid positions and maximize can be cycled), skipped it")
+                }
+            }
+            guard steps.count >= 2 else {
+                warn("cycle \(label) needs at least two valid positions, skipped")
+                continue
+            }
+
+            let name = rawName ?? steps.map(\.name).joined(separator: " → ")
+            let code = rawCode ?? (rawName.map(slug) ?? "cycle-\(i + 1)")
+            guard cycles.allSatisfy({ $0.code != code }) else {
+                warn("cycle '\(code)' is defined more than once, only the first one is used")
+                continue
+            }
+            var key: Keybinding?
+            if let keyValue = table["key"], keyValue.string?.trimmingCharacters(in: .whitespaces).isEmpty != true {
+                if let keyStr = keyValue.string, let kb = KeyParser.keybinding(from: keyStr) {
+                    key = kb
+                } else {
+                    warn("cycle \(label) has an invalid key '\(keyValue.string ?? "?")', left unbound")
+                }
+            }
+            cycles.append(Cycle(code: code, name: name, steps: steps, key: key))
+        }
+        return cycles
+    }
+
+    /// Two bindings on the same shortcut can't both work, so one keeps it and
+    /// the rest are left unbound. Cycles claim first (they're the more deliberate
+    /// binding), then positions in menu order.
+    ///
+    /// A position on the same shortcut as a cycle that *starts* with it isn't a
+    /// real clash (the first press does the same thing either way), so it hands
+    /// the shortcut over quietly. That's what lets ⌘⌃← cycle from Left Half.
+    private static func dedupeShortcuts(_ positions: [Position], cycles: [Cycle],
+                                        warn: (String) -> Void) -> ([Position], [Cycle]) {
         var owners: [UInt64: String] = [:]
-        return positions.map { position in
+        var firstSteps: [UInt64: String] = [:]
+        func id(_ key: Keybinding) -> UInt64 { UInt64(key.modifiers) << 32 | UInt64(key.keyCode) }
+
+        let cycles = cycles.map { cycle -> Cycle in
+            guard let key = cycle.key else { return cycle }
+            guard let owner = owners[id(key)] else {
+                owners[id(key)] = cycle.name
+                firstSteps[id(key)] = cycle.steps.first?.code
+                return cycle
+            }
+            warn("\(KeyParser.display(key)) is bound to both \(owner) and \(cycle.name), only \(owner) will work")
+            var unbound = cycle
+            unbound.key = nil
+            return unbound
+        }
+        let positions = positions.map { position -> Position in
             guard let key = position.key else { return position }
-            let id = UInt64(key.modifiers) << 32 | UInt64(key.keyCode)
-            guard let owner = owners[id] else {
-                owners[id] = position.name
+            guard let owner = owners[id(key)] else {
+                owners[id(key)] = position.name
                 return position
             }
-            warn("\(KeyParser.display(key)) is bound to both \(owner) and \(position.name), only \(owner) will work")
+            if firstSteps[id(key)] != position.code {
+                warn("\(KeyParser.display(key)) is bound to both \(owner) and \(position.name), only \(owner) will work")
+            }
             var unbound = position
             unbound.key = nil
             return unbound
         }
+        return (positions, cycles)
     }
 
     /// "Left Half" → "left-half"  (lowercased, runs of non-alphanumerics → single dash).

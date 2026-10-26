@@ -38,6 +38,15 @@ struct Position {
     var isBuiltin: Bool = false // baked into the app; only its key is configurable
 }
 
+/// A shortcut that steps through several positions on repeated presses, e.g.
+/// left half → left two-thirds → left third.
+struct Cycle {
+    let code: String           // stable identifier, e.g. "left-cycle"
+    let name: String           // shown in the menu; defaults to the step names joined with →
+    let steps: [Position]      // ≥ 2, all frame-producing (cell / maximize)
+    var key: Keybinding?
+}
+
 /// Grid + behavior settings from the `[settings]` table.
 struct GridSettings: Equatable {
     // The grid is a fixed 24×12. Those numbers are highly divisible (24 = halves/
@@ -54,6 +63,7 @@ struct GridSettings: Equatable {
 struct ShiftConfig {
     var settings: GridSettings
     var positions: [Position]
+    var cycles: [Cycle] = []
     var warnings: [String] = []   // non-fatal problems found while parsing
 }
 

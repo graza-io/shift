@@ -122,6 +122,26 @@ enum DefaultConfig {
     cell = [18, 6, 6, 6]        # 25% width, bottom 50% height
     key  = "cmd+ctrl+alt+3"
 
+    # ── Cycles ───────────────────────────────────────────────
+    # Press the same shortcut again to step through the list (wraps around).
+    # A cycle can share its shortcut with its FIRST position, so the first press
+    # works exactly like before. Mix built-in and custom codes freely.
+    [[cycle]]
+    key       = "cmd+ctrl+left"
+    positions = ["left-half", "left-two-thirds", "left-third"]
+
+    [[cycle]]
+    key       = "cmd+ctrl+right"
+    positions = ["right-half", "right-two-thirds", "right-third"]
+
+    [[cycle]]
+    key       = "cmd+ctrl+up"
+    positions = ["top-half", "top-two-thirds", "top-third"]
+
+    [[cycle]]
+    key       = "cmd+ctrl+down"
+    positions = ["bottom-half", "bottom-two-thirds", "bottom-third"]
+
     # ── Example: a keyless, menu-only custom position ────────
     # [[position]]
     # code = "reading"
