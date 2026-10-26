@@ -52,4 +52,81 @@ func runGridGeometryTests() {
     // Defensive clamping.
     let clamped = frame(20, 0, 12, 12)
     R.ok(clamped.maxX <= vf.maxX + 0.5 && clamped.minX >= vf.minX - 0.5, "out-of-bounds cell clamps inside grid")
+
+    runFrameToCellTests()
+    runDisplayThrowTests()
+}
+
+private func runFrameToCellTests() {
+    R.suite("GridGeometry: frame → cell")
+
+    let vf = CGRect(x: 0, y: 0, width: 2400, height: 1200)  // each cell = 100x100
+    func nearest(_ f: CGRect, gap: CGFloat = 0, screenGap: CGFloat = 0) -> CellRect {
+        GridGeometry.nearestCell(to: f, in: vf, columns: 24, rows: 12, gap: gap, screenGap: screenGap)
+    }
+
+    // Round-trips every built-in exactly.
+    for spec in BuiltinPositions.specs {
+        guard case .cell(let cell) = spec.kind else { continue }
+        let f = GridGeometry.frame(for: cell, in: vf, columns: 24, rows: 12)
+        R.equal(nearest(f), cell, "\(spec.code) round-trips")
+        let g = GridGeometry.frame(for: cell, in: vf, columns: 24, rows: 12, gap: 16, screenGap: 12)
+        R.equal(nearest(g, gap: 16, screenGap: 12), cell, "\(spec.code) round-trips with gaps")
+    }
+
+    R.equal(nearest(CGRect(x: 130, y: 640, width: 940, height: 470)), CellRect(x: 1, y: 1, w: 10, h: 5),
+            "off-grid frame snaps to nearest lines")
+    R.equal(nearest(CGRect(x: 1210, y: 0, width: 20, height: 20)).w, 1, "tiny window still at least 1 cell")
+    R.equal(nearest(CGRect(x: -500, y: -500, width: 4000, height: 4000)), CellRect(x: 0, y: 0, w: 24, h: 12),
+            "oversized window clamps to the grid")
+
+    let settings = GridSettings()
+    R.equal(GridGeometry.cell(matching: CGRect(x: 0, y: 0, width: 1195, height: 1200), in: vf, settings: settings),
+            CellRect(x: 0, y: 0, w: 12, h: 12), "within tolerance matches (e.g. Terminal rounding)")
+    R.ok(GridGeometry.cell(matching: CGRect(x: 130, y: 640, width: 940, height: 470), in: vf, settings: settings) == nil,
+         "free-floating window matches no cell")
+}
+
+private func runDisplayThrowTests() {
+    R.suite("GridGeometry: display throws")
+
+    let landscape = CGRect(x: 0, y: 0, width: 2400, height: 1200)
+    let portrait = CGRect(x: 2400, y: -600, width: 1200, height: 2400)  // to the right, taller
+    let small = CGRect(x: -1200, y: 0, width: 1200, height: 600)
+    let settings = GridSettings()
+    func thrown(_ w: CGRect, _ from: CGRect, _ to: CGRect, _ s: GridSettings = GridSettings()) -> CGRect {
+        GridGeometry.frameOnOtherDisplay(w, from: from, to: to, settings: s)
+    }
+    func cellFrame(_ c: CellRect, _ screen: CGRect, _ s: GridSettings = GridSettings()) -> CGRect {
+        GridGeometry.frame(for: c, in: screen, columns: 24, rows: 12, gap: s.gap, screenGap: s.screenGap)
+    }
+
+    let leftHalf = CellRect(x: 0, y: 0, w: 12, h: 12)
+    R.equal(thrown(cellFrame(leftHalf, landscape), landscape, portrait), cellFrame(leftHalf, portrait),
+            "left half stays left half (landscape → portrait)")
+    let topRight = CellRect(x: 12, y: 0, w: 12, h: 6)
+    R.equal(thrown(cellFrame(topRight, portrait), portrait, small), cellFrame(topRight, small),
+            "top right quarter stays put (portrait → small)")
+
+    R.equal(thrown(landscape, landscape, portrait), portrait, "maximized stays maximized")
+
+    var gappy = settings
+    gappy.gap = 20
+    gappy.screenGap = 10
+    R.equal(thrown(landscape.insetBy(dx: 10, dy: 10), landscape, small, gappy), small.insetBy(dx: 10, dy: 10),
+            "maximized with screen_gap keeps the margin")
+    R.equal(thrown(cellFrame(leftHalf, landscape, gappy), landscape, small, gappy), cellFrame(leftHalf, small, gappy),
+            "grid position with gaps keeps the gaps")
+
+    // Free-floating: 10% from the left, 25% wide etc. on a 2400×1200 screen.
+    let floating = CGRect(x: 240, y: 300, width: 650, height: 450)
+    R.equal(thrown(floating, landscape, small), CGRect(x: -1080, y: 150, width: 325, height: 225),
+            "free window keeps relative position and size")
+
+    // Hanging off the right edge of the source: it gets pulled fully on screen.
+    let offEdge = CGRect(x: 2150, y: 130, width: 650, height: 450)
+    R.ok(GridGeometry.cell(matching: offEdge, in: landscape, settings: settings) == nil, "really is free-floating")
+    let result = thrown(offEdge, landscape, small)
+    R.ok(small.contains(result), "stays fully on the target screen, got \(result)")
+    R.equal(result.maxX, small.maxX, "pushed back to the right edge")
 }

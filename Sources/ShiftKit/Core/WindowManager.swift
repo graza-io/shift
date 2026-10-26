@@ -128,8 +128,13 @@ final class WindowManager {
 
     private func moveToDisplay(window: AXUIElement, from currentScreen: NSScreen, next: Bool) {
         guard let target = next ? DisplayHelper.shared.nextScreen(from: currentScreen)
-                                 : DisplayHelper.shared.previousScreen(from: currentScreen) else { return }
-        move(window: window, to: convertToCG(nsFrame: target.visibleFrame, screen: target))
+                                 : DisplayHelper.shared.previousScreen(from: currentScreen),
+              let frame = getFrame(of: window) else { return }
+        let nsFrame = GridGeometry.frameOnOtherDisplay(convertToNS(cgFrame: frame),
+                                                       from: currentScreen.visibleFrame,
+                                                       to: target.visibleFrame,
+                                                       settings: Config.shared.current.settings)
+        move(window: window, to: convertToCG(nsFrame: nsFrame, screen: target))
     }
 
     // MARK: - Restore
@@ -299,5 +304,12 @@ final class WindowManager {
         guard let mainScreen = NSScreen.screens.first else { return nsFrame }
         let cgY = mainScreen.frame.height - nsFrame.maxY
         return CGRect(x: nsFrame.minX, y: cgY, width: nsFrame.width, height: nsFrame.height)
+    }
+
+    /// Convert a CoreGraphics/AX (top-left origin) frame to AppKit (bottom-left origin).
+    func convertToNS(cgFrame: CGRect) -> CGRect {
+        guard let mainScreen = NSScreen.screens.first else { return cgFrame }
+        let nsY = mainScreen.frame.height - cgFrame.maxY
+        return CGRect(x: cgFrame.minX, y: nsY, width: cgFrame.width, height: cgFrame.height)
     }
 }

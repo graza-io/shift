@@ -16,8 +16,13 @@ final class DisplayHelper {
         NotificationCenter.default.post(name: .displaysChanged, object: nil)
     }
 
-    /// Screen whose frame overlaps `windowFrame` the most.
+    /// Screen whose frame overlaps `windowFrame` the most. `windowFrame` is in
+    /// CoreGraphics/AX coords (top-left origin), as AX and CGWindowList report it,
+    /// so it's flipped to AppKit coords before comparing with screen frames.
     func currentScreen(for windowFrame: CGRect) -> NSScreen {
+        let mainHeight = NSScreen.screens.first?.frame.height ?? 0
+        let windowFrame = CGRect(x: windowFrame.minX, y: mainHeight - windowFrame.maxY,
+                                 width: windowFrame.width, height: windowFrame.height)
         var maxArea: CGFloat = 0
         var best = NSScreen.main ?? NSScreen.screens.first!
         for screen in NSScreen.screens {
