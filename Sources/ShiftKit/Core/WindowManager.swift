@@ -10,6 +10,8 @@ final class WindowManager {
     private init() {}
 
     private var previousFrames: [String: CGRect] = [:]
+    /// Per window: the cycle step Shift last applied and the frame it ended up with.
+    private var cycleMemory: [String: (cycle: String, index: Int, frame: CGRect)] = [:]
 
     // MARK: - Entry point
 
@@ -19,6 +21,28 @@ final class WindowManager {
             return
         }
         skyLightFallback(position)
+    }
+
+    /// Applies the next step of `cycle` to the focused window (see `CycleStepper`).
+    func apply(_ cycle: Cycle) {
+        guard let first = cycle.steps.first else { return }
+        guard let window = getFocusedWindow(), let frame = getFrame(of: window) else {
+            // AX-less app: we can't read where it is, so just snap to the first step.
+            skyLightFallback(first)
+            return
+        }
+        let screen = DisplayHelper.shared.currentScreen(for: frame)
+        let targets = cycle.steps.map { step in
+            targetFrame(for: step.kind, on: screen).map { convertToCG(nsFrame: $0, screen: screen) }
+        }
+        let memory = getWindowID(of: window).flatMap { cycleMemory[$0] }
+        let remembered = memory.flatMap { $0.cycle == cycle.code ? (index: $0.index, frame: $0.frame) : nil }
+        let index = CycleStepper.nextIndex(current: frame, targets: targets, remembered: remembered)
+
+        applyToAXWindow(window, position: cycle.steps[index])
+        if let id = getWindowID(of: window), let newFrame = getFrame(of: window) {
+            cycleMemory[id] = (cycle.code, index, newFrame)
+        }
     }
 
     // MARK: - Target frame (NS coordinates)

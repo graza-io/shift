@@ -75,6 +75,24 @@ code = "reading"                 # keyless = menu-only, still in the registry
 cell = [5, 2, 14, 8]
 ```
 
+### Cycles
+
+Press the same shortcut again to step through several positions, like Rectangle
+and Magnet do. After the last one it wraps back to the first:
+
+```toml
+[[cycle]]
+key       = "cmd+ctrl+left"
+positions = ["left-half", "left-two-thirds", "left-third"]
+name      = "Left"            # optional, defaults to "Left Half → Left Two-Thirds → Left Third"
+```
+
+- Positions can be built-in or custom codes (grid cells or `maximize`).
+- If the window isn't on one of the cycle's positions, it starts from the first one.
+- A cycle can share its shortcut with its **first** position (the first press does
+  the same thing either way). Any other clash is flagged in the menu, and the cycle wins.
+- The default config ships cycles on ⌘⌃ + arrows for halves → two-thirds → thirds.
+
 Custom positions can also use `action =` instead of `cell`: `maximize`, `center`,
 `restore`, `next-display` / `previous-display`.
 

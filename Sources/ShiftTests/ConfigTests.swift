@@ -313,7 +313,6 @@ func runConfigTests() {
         let leftHalf = config.positions.first { $0.code == "left-half" }
         R.ok(leftHalf?.isBuiltin == true, "left-half is built-in")
         R.ok(leftHalf?.kind == .cell(CellRect(x: 0, y: 0, w: 12, h: 12)), "left-half cell")
-        R.ok(leftHalf?.key != nil, "left-half bound")
         R.equal(leftHalf?.name, "Left Half", "left-half display name")
         R.equal(leftHalf?.category, "Basic Layout", "left-half category")
 
@@ -334,7 +333,128 @@ func runConfigTests() {
 
         let displays = config.positions.filter { $0.category == "Displays" }
         R.equal(displays.count, 2, "two display throws")
+
+        // Arrow keys cycle, and the halves quietly hand their shortcut over.
+        R.equal(config.cycles.count, 4, "four arrow-key cycles")
+        let left = config.cycles.first { $0.key?.keyCode == UInt32(kVK_LeftArrow) }
+        R.equal(left?.steps.map(\.code), ["left-half", "left-two-thirds", "left-third"], "left cycle steps")
+        R.ok(leftHalf?.key == nil, "left-half's shortcut handed to the cycle")
     }
+}
+
+func runCycleTests() {
+    R.suite("Cycles")
+
+    R.noThrow("cycle parses with built-in and custom steps") {
+        let config = try ConfigLoader.parse("""
+        [[position]]
+        code = "wide"
+        cell = [2, 0, 20, 12]
+
+        [[cycle]]
+        key = "cmd+alt+w"
+        positions = ["wide", "left-half", "maximize"]
+        """)
+        R.equal(config.cycles.count, 1, "one cycle")
+        let cycle = config.cycles[0]
+        R.equal(cycle.steps.map(\.code), ["wide", "left-half", "maximize"], "steps in order")
+        R.equal(cycle.name, "Wide → Left Half → Maximize", "default name joins step names")
+        R.equal(cycle.code, "cycle-1", "default code")
+        R.equal(cycle.key?.keyCode, UInt32(kVK_ANSI_W), "bound")
+        R.equal(config.warnings, [], "no warnings")
+    }
+
+    R.noThrow("name and code can be set") {
+        let config = try ConfigLoader.parse("""
+        [[cycle]]
+        name = "Left Side"
+        positions = ["left-half", "left-third"]
+        """)
+        R.equal(config.cycles.first?.name, "Left Side", "explicit name")
+        R.equal(config.cycles.first?.code, "left-side", "code slugged from name")
+        R.ok(config.cycles.first?.key == nil, "keyless cycle is menu-only")
+    }
+
+    R.noThrow("unknown and uncyclable steps are skipped with warnings") {
+        let config = try ConfigLoader.parse("""
+        [[cycle]]
+        code = "c"
+        positions = ["left-half", "nope", "center", "left-third"]
+        """)
+        R.equal(config.cycles.first?.steps.map(\.code), ["left-half", "left-third"], "bad steps dropped")
+        R.ok(config.warnings.contains { $0.contains("nope") }, "unknown code warned")
+        R.ok(config.warnings.contains { $0.contains("center") }, "non-grid action warned")
+    }
+
+    R.noThrow("cycles with fewer than two valid steps are skipped") {
+        let config = try ConfigLoader.parse("""
+        [[cycle]]
+        code = "short"
+        positions = ["left-half", "nope"]
+        [[cycle]]
+        code = "missing"
+        """)
+        R.equal(config.cycles.count, 0, "both skipped")
+        R.ok(config.warnings.contains { $0.contains("short") && $0.contains("at least two") }, "too short warned")
+        R.ok(config.warnings.contains { $0.contains("missing") && $0.contains("positions list") }, "no list warned")
+    }
+
+    R.noThrow("sharing a shortcut with the first step is fine") {
+        let config = try ConfigLoader.parse("""
+        [[cycle]]
+        key = "cmd+ctrl+left"
+        positions = ["left-half", "left-third"]
+        """)
+        R.equal(config.warnings, [], "no clash warning")
+        R.equal(config.cycles.first?.key?.keyCode, UInt32(kVK_LeftArrow), "cycle has the shortcut")
+        R.ok(config.positions.first { $0.code == "left-half" }?.key == nil, "left-half handed it over")
+    }
+
+    R.noThrow("a real clash is flagged and the cycle wins") {
+        let config = try ConfigLoader.parse("""
+        [[cycle]]
+        name = "Thirds"
+        key = "cmd+ctrl+right"
+        positions = ["left-third", "center-third"]
+        """)
+        R.ok(config.warnings.contains { $0.contains("Right Half") && $0.contains("Thirds") }, "clash warned")
+        R.equal(config.cycles.first?.key?.keyCode, UInt32(kVK_RightArrow), "cycle keeps it")
+        R.ok(config.positions.first { $0.code == "right-half" }?.key == nil, "position unbound")
+    }
+
+    R.noThrow("two cycles on one shortcut: the first wins") {
+        let config = try ConfigLoader.parse("""
+        [[cycle]]
+        name = "A"
+        key = "cmd+alt+q"
+        positions = ["left-half", "left-third"]
+        [[cycle]]
+        name = "B"
+        key = "cmd+alt+q"
+        positions = ["right-half", "right-third"]
+        """)
+        R.ok(config.cycles[0].key != nil && config.cycles[1].key == nil, "A keeps it, B unbound")
+        R.ok(config.warnings.contains { $0.contains("only A will work") }, "clash warned")
+    }
+
+    let half = CGRect(x: 0, y: 0, width: 500, height: 800)
+    let twoThirds = CGRect(x: 0, y: 0, width: 667, height: 800)
+    let third = CGRect(x: 0, y: 0, width: 333, height: 800)
+    let targets: [CGRect?] = [half, twoThirds, third]
+
+    R.equal(CycleStepper.nextIndex(current: CGRect(x: 40, y: 40, width: 300, height: 300), targets: targets), 0,
+            "window elsewhere → first step")
+    R.equal(CycleStepper.nextIndex(current: half, targets: targets), 1, "on step 0 → step 1")
+    R.equal(CycleStepper.nextIndex(current: twoThirds.offsetBy(dx: 2, dy: 1), targets: targets), 2,
+            "close enough to step 1 → step 2")
+    R.equal(CycleStepper.nextIndex(current: third, targets: targets), 0, "last step wraps to first")
+    R.equal(CycleStepper.nextIndex(current: CGRect(x: 0, y: 0, width: 655, height: 790), targets: targets,
+                                   remembered: (index: 1, frame: CGRect(x: 0, y: 0, width: 655, height: 790))), 2,
+            "rounded frame recognised via memory")
+    R.equal(CycleStepper.nextIndex(current: CGRect(x: 90, y: 90, width: 400, height: 400), targets: targets,
+                                   remembered: (index: 1, frame: CGRect(x: 0, y: 0, width: 655, height: 790))), 0,
+            "moved by hand since → start over")
+    R.equal(CycleStepper.nextIndex(current: half, targets: []), 0, "empty cycle doesn't crash")
 }
 
 func runAppInfoTests() {
