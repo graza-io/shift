@@ -38,7 +38,7 @@ There are two kinds of positions:
 
 - **Built-in** - the **Basic Layout** group (halves/quarters/thirds/two-thirds,
   vertical top/middle/bottom thirds for stacking on portrait displays, +
-  maximize/center/restore) and **Displays** (next/previous). These are baked into
+  maximize/center/restore) and **Displays** (next/previous, which keep the window in the same grid spot on the new screen). These are baked into
   the app: you can't add, remove, or move them, but you *can* rebind their
   shortcuts in the `[keybindings]` table (keyed by `code`; `""` unbinds, and a
   deleted line keeps the default). The vertical thirds are **unbound by default** -

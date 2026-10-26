@@ -14,17 +14,12 @@ enum CycleStepper {
                           remembered: (index: Int, frame: CGRect)? = nil,
                           tolerance: CGFloat = 4) -> Int {
         guard !targets.isEmpty else { return 0 }
-        if let r = remembered, r.index < targets.count, isClose(current, r.frame, tolerance) {
+        if let r = remembered, r.index < targets.count, current.isClose(to: r.frame, tolerance: tolerance) {
             return (r.index + 1) % targets.count
         }
-        if let i = targets.firstIndex(where: { $0.map { isClose(current, $0, tolerance) } ?? false }) {
+        if let i = targets.firstIndex(where: { $0.map { current.isClose(to: $0, tolerance: tolerance) } ?? false }) {
             return (i + 1) % targets.count
         }
         return 0
-    }
-
-    private static func isClose(_ a: CGRect, _ b: CGRect, _ tolerance: CGFloat) -> Bool {
-        abs(a.minX - b.minX) <= tolerance && abs(a.minY - b.minY) <= tolerance &&
-            abs(a.width - b.width) <= tolerance && abs(a.height - b.height) <= tolerance
     }
 }
